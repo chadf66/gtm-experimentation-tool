@@ -3,6 +3,18 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Mac OS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Jupyter 
+*.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+
 # C extensions
 *.so
 
