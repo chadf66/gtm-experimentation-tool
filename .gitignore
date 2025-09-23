@@ -149,7 +149,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -217,3 +217,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Ignore local experiments created by gxt init
+experiments/
+gxt_project.yml
+projects/

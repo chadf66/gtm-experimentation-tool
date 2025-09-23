@@ -1,0 +1,17 @@
+gxt_profile:
+  target: dev
+  outputs:
+    dev:
+      type: {{ adapter | default('bigquery') }}
+      # Credentials should be provided via environment variables or secret manager
+      # Use dbt-style env_var placeholders so users can adapt for their environment.
+      project: "{{ env_var('GCP_PROJECT', '') }}"
+      dataset: "{{ env_var('BIGQUERY_DATASET', '') }}"
+      credentials: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', '') }}"
+    prod:
+      type: {{ adapter | default('bigquery') }}
+      project: "{{ env_var('GCP_PROJECT', '') }}"
+      dataset: "{{ env_var('BIGQUERY_DATASET', '') }}"
+      credentials: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', '') }}"

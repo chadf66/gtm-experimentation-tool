@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gxt"
+version = "0.1.0"
+description = "GTM Experimentation Tool (gxt) - CLI for SQL-based experiments"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [ { name = "Chad Faulkner" } ]
+dependencies = [
+  "typer[all]>=0.9",
+  "Jinja2>=3.0",
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+# Console script entrypoint that calls the Typer app object in gxt.main
+gxt = "gxt.main:app"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

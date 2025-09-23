@@ -1,0 +1,21 @@
+experiment_id: {{ experiment_id }}
+status: active
+randomization_unit: {{ randomization_unit }}
+assignments_table: {{ assignments_table }}
+description: "{{ description | default('') }}"
+start_date: "{{ start_date | default('') }}"
+end_date: "{{ end_date | default('') }}"
+owner: "{{ owner | default('') }}"
+tags:
+{%- if tags %}
+{%- for tag in tags %}
+  - "{{ tag }}"
+{%- endfor %}
+{%- else %}
+  []
+{%- endif %}
+variants:
+  - name: control
+    exposure: 0.5
+  - name: treatment
+    exposure: 0.5
