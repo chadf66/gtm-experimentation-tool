@@ -192,12 +192,29 @@ def run(
             typer.echo(f"Could not ensure assignments table exists: {e}")
             raise typer.Exit(code=8)
 
+    # If adapter profile did not include explicit credentials, inform the user we're
+    # attempting Application Default Credentials (ADC). This is helpful when running
+    # on GCP VMs or Cloud Functions where ADC is provided automatically.
+    try:
+        profile_missing_creds = False
+        if hasattr(adapter_obj, 'client') and adapter_obj.client is None:
+            # We couldn't build a client earlier; profile may be missing credentials
+            profile_missing_creds = True
+    except Exception:
+        profile_missing_creds = False
+
+    if profile_missing_creds:
+        typer.echo("Note: no BigQuery client could be created from the configured profile.\n" \
+                   "If you're running on GCP, Application Default Credentials (ADC) may be used automatically.\n" \
+                   "Locally you can run: `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.")
+
     typer.echo("Performing upsert into assignments table...")
     # Use key columns: experiment_id and the randomization unit
     try:
-        # Tell adapter the exact insert columns to expect so INSERT uses the correct randomization unit name
-        adapter_obj._last_insert_columns = ["experiment_id", randomization_unit, "variant", "assigned_at"]
-        result = adapter_obj.upsert_from_select(assignments_table, src_select, ["experiment_id", randomization_unit])
+        # Provide explicit insert columns so the adapter does not rely on transient
+        # internal state. This ensures the randomization unit column name is used.
+        insert_cols = ["experiment_id", randomization_unit, "variant", "assigned_at"]
+        result = adapter_obj.upsert_from_select(assignments_table, src_select, ["experiment_id", randomization_unit], insert_columns=insert_cols)
         typer.echo("Upsert returned:")
         typer.echo(str(result))
     except Exception as e:

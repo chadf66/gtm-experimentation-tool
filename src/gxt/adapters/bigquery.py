@@ -140,7 +140,7 @@ class BigQueryAdapter(WarehouseAdapter):
             print(f"[bigquery] Created table: {created.full_table_id}")
             return created
 
-    def upsert_from_select(self, target_table: str, src_select_sql: str, key_columns: Iterable[str]):
+    def upsert_from_select(self, target_table: str, src_select_sql: str, key_columns: Iterable[str], insert_columns: Optional[Iterable[str]] = None):
         """Generate and execute a BigQuery MERGE statement that upserts rows from a SELECT.
 
         Parameters:
@@ -182,8 +182,9 @@ class BigQueryAdapter(WarehouseAdapter):
             else:
                 fq_target = target_table
 
-        # Determine insert columns (caller can set adapter._last_insert_columns before calling)
-        insert_cols = getattr(self, '_last_insert_columns', None)
+        # Determine insert columns (caller may pass explicit insert_columns). Fall
+        # back to sensible defaults if none provided.
+        insert_cols = list(insert_columns) if insert_columns is not None else None
         if insert_cols is None:
             insert_cols = ["experiment_id", "unit", "variant", "assigned_at"]
 

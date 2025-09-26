@@ -3,8 +3,12 @@ gxt_profile:
   outputs:
     dev:
       type: {{ adapter | default('bigquery') }}
-      # Credentials should be provided via environment variables or secret manager
-      # Use dbt-style env_var placeholders so users can adapt for their environment.
+  # Credentials may be provided via environment variables or a service account JSON,
+  # but can be left empty to use Application Default Credentials (ADC) when running
+  # on GCP (Compute Engine, GKE, Cloud Run, etc.). Locally you can run:
+  #   gcloud auth application-default login
+  # or set GOOGLE_APPLICATION_CREDENTIALS to point to a service account JSON file.
+  # Use dbt-style env_var placeholders so users can adapt for their environment.
       project: "{{ env_var('GCP_PROJECT', '') }}"
       dataset: "{{ env_var('BIGQUERY_DATASET', '') }}"
       credentials: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"

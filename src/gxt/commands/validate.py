@@ -129,6 +129,9 @@ def validate(
                             errors.append("profiles.yml: BigQuery profile missing 'project'")
                         if not profile_output.get("dataset"):
                             errors.append("profiles.yml: BigQuery profile missing 'dataset'")
+                        # credentials may be omitted when running on GCP (ADC/metadata); warn instead of error
+                        if not profile_output.get("credentials"):
+                            warnings.append("profiles.yml: BigQuery profile has no 'credentials' configured — will attempt Application Default Credentials (ADC) on GCP")
             except Exception as e:
                 errors.append(f"profiles.yml: parse error: {e}")
         else:
@@ -147,14 +150,31 @@ def validate(
             profile_output = _lp(root, profile_name)
             if profile_output and profile_output.get("type") == "bigquery":
                 try:
-                    # lazy import of bigquery client; if not installed we'll warn
+                    # Prefer Application Default Credentials (ADC). This works on
+                    # GCE/GKE/Cloud Run when the service account is attached to the
+                    # resource (no credentials file required).
+                    import google.auth
                     from google.cloud import bigquery as gbq  # type: ignore
 
-                    client = gbq.Client(project=profile_output.get("project") or None)
-                    # run a lightweight query
-                    _ = list(client.query("SELECT 1 AS ok").result())
-                except Exception as e:
-                    errors.append(f"BigQuery connectivity test failed: {e}")
+                    creds, detected_project = google.auth.default()
+                    project = profile_output.get("project") or detected_project
+                    client = gbq.Client(project=project, credentials=creds)
+                    list(client.query("SELECT 1 AS ok").result())
+                except Exception as e_adc:
+                    # ADC failed; try explicit credentials file if provided in profile
+                    cred_file = profile_output.get("credentials")
+                    try:
+                        from google.cloud import bigquery as gbq  # type: ignore
+                        if cred_file:
+                            client = gbq.Client.from_service_account_file(cred_file, project=profile_output.get("project"))
+                            list(client.query("SELECT 1 AS ok").result())
+                        else:
+                            errors.append(f"BigQuery connectivity test failed (ADC unavailable and no credentials provided): {e_adc}")
+                    except Exception as e2:
+                        errors.append(f"BigQuery connectivity test failed (explicit credentials): {e2}")
+        except Exception:
+            # swallow errors and report via errors list above
+            pass
         except Exception:
             # swallow errors and report via errors list above
             pass
