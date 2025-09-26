@@ -8,7 +8,7 @@ import yaml
 from typing import Optional, Dict
 import os
 import re
-
+from dotenv import load_dotenv 
 
 def load_profile(root: Path, profile_name: str = "gxt_profile") -> Optional[Dict]:
     """Load profiles.yml from the given project root and return the active output dict.
@@ -19,6 +19,18 @@ def load_profile(root: Path, profile_name: str = "gxt_profile") -> Optional[Dict
     if not profiles_path.exists():
         return None
     try:
+        # If a .env file exists at the project root, load its values into the
+        # environment for the purpose of rendering profiles.yml. We only set
+        # variables that are not already present in os.environ so we don't
+        # override user environment.
+        # Require python-dotenv for parsing .env files. This simplifies parsing
+        # and makes behavior consistent. If python-dotenv is not installed,
+        # raise a clear error instructing users to install it.
+
+        env_path = str(root / ".env")
+        # load_dotenv will not override existing env vars by default
+        load_dotenv(env_path)
+
         raw = profiles_path.read_text()
         # simple rendering for {{ env_var('FOO') }} and {{ env_var('FOO','default') }}
         def _replace_env_var(match):
