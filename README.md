@@ -74,12 +74,15 @@ gxt <command> [args]
 - `compile [EXPERIMENT] --project-path <path>` — compile manifests for the project or a single experiment
 - `list --project-path <path>` — list experiments
 - `validate --project-path <path>` — validate experiment configs and SQL
-- `run <EXPERIMENT> --project-path <path> [--no-dry-run] [--adapter ADAPTER_NAME] [--create-assignments-table]` — build and optionally execute assignment upserts
+- `run [EXPERIMENT] --project-path <path> [--no-dry-run] [--adapter ADAPTER_NAME] [--create-assignments-table]` — build and optionally execute assignment upserts for a single experiment
+- `run --group <GROUP_NAME> --project-path <path> [--no-dry-run] [--adapter ADAPTER_NAME] [--create-assignments-table]` — build and optionally execute assignment upserts for all experiments in a group
 
 ### Run command notes
 
 - Default behavior is a dry-run (prints SQL). Use `--no-dry-run` to execute.
 - `--create-assignments-table` instructs the BigQuery adapter to create the assignments table if it is missing. This is opt-in and requires BigQuery client + permissions.
+- Use `--group/-g <GROUP_NAME>` to run all experiments that belong to a specific group. Experiments can specify group membership using either a `group` string or `groups` list in their `config.yml`.
+- When running a group, experiments are processed in alphabetical order for deterministic results.
 
 ### Examples
 
@@ -90,10 +93,22 @@ python -m src.gxt.main compile demo_exp --project-path projects/demo
 python -m src.gxt.main run demo_exp --project-path projects/demo
 ```
 
+Run all experiments in a group (dry-run):
+
+```bash
+python -m src.gxt.main run --group marketing-tests --project-path projects/demo
+```
+
 Real run against BigQuery (ensure credentials and billing enabled):
 
 ```bash
 python -m src.gxt.main run dummy_experiment2 --project-path projects/test_project2 --no-dry-run --create-assignments-table
+```
+
+Real run for a group against BigQuery:
+
+```bash
+python -m src.gxt.main run --group marketing-tests --project-path projects/demo --no-dry-run --create-assignments-table
 ```
 
 ## BigQuery adapter details

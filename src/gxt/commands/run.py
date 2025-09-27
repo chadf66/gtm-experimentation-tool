@@ -49,17 +49,8 @@ def build_assignment_sql(audience_sql: str, hash_sql_expr: str, variants: list, 
     return sql
 
 
-@app.callback(invoke_without_command=True)
-def run(
-    experiment: str = typer.Argument(..., help="Experiment name (directory under experiments/)."),
-    project_path: Optional[str] = typer.Option(None, "--project-path", "-p", help="Project root path where the experiments/ folder lives"),
-    adapter: Optional[str] = typer.Option(None, help="Adapter to use for execution, e.g. 'bigquery'"),
-    dry_run: bool = typer.Option(True, help="If set, prints SQL and does not execute."),
-    create_assignments_table: bool = typer.Option(False, "--create-assignments-table", help="If set, create the assignments table in the warehouse if it does not exist."),
-):
-    """Run assignments for a given experiment: compile assignment SQL and optionally execute it."""
-    # choose project root: provided project_path or current working dir
-    root = Path(project_path).resolve() if project_path else Path.cwd()
+def _run_single_experiment(experiment: str, root: Path, adapter_obj, dry_run: bool, create_assignments_table: bool):
+    """Helper function to run a single experiment."""
     exp_dir = root / "experiments" / experiment
     if not exp_dir.exists():
         typer.echo(f"Experiment not found: {experiment}")
@@ -71,33 +62,9 @@ def run(
         typer.echo(f"Experiment {experiment} missing config.yml or audience.sql")
         raise typer.Exit(code=2)
 
-    import yaml
     cfg = yaml.safe_load(cfg_file.read_text())
     variants = cfg.get("variants") or []
     randomization_unit = cfg.get("randomization_unit") or "user_id"
-
-    # Determine adapter
-    adapter_obj = None
-    if adapter:
-        adapter = adapter.lower()
-        if adapter == "bigquery":
-            adapter_obj = BigQueryAdapter()
-        else:
-            typer.echo(f"Unknown adapter: {adapter}. Proceeding with dry-run only.")
-    else:
-        # attempt to load profile from project gxt_project.yml -> profiles.yml
-        # (use the resolved project root from --path, do NOT reset to cwd)
-        gxt_yml = root / "gxt_project.yml"
-        profile_output = None
-        if gxt_yml.exists():
-            try:
-                proj = yaml.safe_load(gxt_yml.read_text()) or {}
-                profile_name = proj.get("profile", "gxt_profile")
-                profile_output = load_profile(root, profile_name)
-                if profile_output and profile_output.get("type") == "bigquery":
-                    adapter_obj = BigQueryAdapter.from_profile(profile_output)
-            except Exception:
-                pass
 
     # Get audience SQL content
     # Prefer compiled audience SQL (so any {{ source(...) }} markers are qualified).
@@ -220,3 +187,110 @@ def run(
     except Exception as e:
         typer.echo(f"Upsert failed: {e}")
         raise typer.Exit(code=7)
+
+
+@app.callback(invoke_without_command=True)
+def run(
+    experiment: Optional[str] = typer.Argument(None, help="Experiment name (directory under experiments/)."),
+    project_path: Optional[str] = typer.Option(None, "--project-path", "-p", help="Project root path where the experiments/ folder lives"),
+    adapter: Optional[str] = typer.Option(None, help="Adapter to use for execution, e.g. 'bigquery'"),
+    dry_run: bool = typer.Option(True, help="If set, prints SQL and does not execute."),
+    create_assignments_table: bool = typer.Option(False, "--create-assignments-table", help="If set, create the assignments table in the warehouse if it does not exist."),
+    group: Optional[str] = typer.Option(None, "--group", "-g", help="Group name to run all experiments in the group"),
+):
+    """Run assignments for a given experiment or all experiments in a group: compile assignment SQL and optionally execute it."""
+    # Validate arguments
+    if not experiment and not group:
+        typer.echo("Error: Either experiment name or --group must be provided")
+        raise typer.Exit(code=1)
+    
+    if experiment and group:
+        typer.echo("Error: Cannot specify both experiment name and --group option")
+        raise typer.Exit(code=1)
+    
+    # choose project root: provided project_path or current working dir
+    root = Path(project_path).resolve() if project_path else Path.cwd()
+    
+    # Check that experiments directory exists
+    experiments_dir = root / "experiments"
+    if not experiments_dir.exists():
+        typer.echo("Error: experiments/ directory not found")
+        raise typer.Exit(code=1)
+    
+    # Determine adapter
+    adapter_obj = None
+    if adapter:
+        adapter = adapter.lower()
+        if adapter == "bigquery":
+            adapter_obj = BigQueryAdapter()
+        else:
+            typer.echo(f"Unknown adapter: {adapter}. Proceeding with dry-run only.")
+    else:
+        # attempt to load profile from project gxt_project.yml -> profiles.yml
+        # (use the resolved project root from --path, do NOT reset to cwd)
+        gxt_yml = root / "gxt_project.yml"
+        profile_output = None
+        if gxt_yml.exists():
+            try:
+                proj = yaml.safe_load(gxt_yml.read_text()) or {}
+                profile_name = proj.get("profile", "gxt_profile")
+                profile_output = load_profile(root, profile_name)
+                if profile_output and profile_output.get("type") == "bigquery":
+                    adapter_obj = BigQueryAdapter.from_profile(profile_output)
+            except Exception:
+                pass
+
+    if experiment:
+        # Single experiment mode - preserve existing behavior
+        _run_single_experiment(experiment, root, adapter_obj, dry_run, create_assignments_table)
+    else:
+        # Group mode - find experiments by group membership
+        try:
+            manifest = compile_manifest(root, adapter=adapter_obj)
+        except Exception as e:
+            typer.echo(f"Manifest compilation failed: {e}")
+            typer.echo("Fix compile errors before running. Aborting.")
+            raise typer.Exit(code=2)
+        
+        # Find experiments that belong to the specified group
+        experiments_in_group = []
+        for exp_name, exp_data in manifest.get("experiments", {}).items():
+            config = exp_data.get("config", {})
+            if not config:
+                continue
+                
+            # Check both single 'group' string and 'groups' list
+            exp_groups = []
+            if "group" in config:
+                if isinstance(config["group"], str):
+                    exp_groups.append(config["group"])
+            if "groups" in config:
+                if isinstance(config["groups"], list):
+                    exp_groups.extend(config["groups"])
+            
+            if group in exp_groups:
+                experiments_in_group.append(exp_name)
+        
+        if not experiments_in_group:
+            typer.echo(f"Error: No experiments found for group '{group}'")
+            raise typer.Exit(code=1)
+        
+        # Sort experiments for deterministic order
+        experiments_in_group.sort()
+        
+        typer.echo(f"Running {len(experiments_in_group)} experiments in group '{group}': {', '.join(experiments_in_group)}")
+        
+        # Run each experiment
+        for i, exp_name in enumerate(experiments_in_group):
+            if i > 0:
+                typer.echo("\n" + "="*50)
+            typer.echo(f"Running experiment: {exp_name}")
+            typer.echo("-" * 30)
+            try:
+                _run_single_experiment(exp_name, root, adapter_obj, dry_run, create_assignments_table)
+            except typer.Exit:
+                # Re-raise experiment-specific errors
+                raise
+            except Exception as e:
+                typer.echo(f"Error running experiment {exp_name}: {e}")
+                raise typer.Exit(code=1)
