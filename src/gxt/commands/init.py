@@ -13,7 +13,7 @@ def init(
     project_path: Optional[str] = typer.Option(None, "--project-path", "-p", help="Directory to initialize the project in (default: current directory)"),
     name: str = typer.Option("gxt_project", "--name", help="Project name to write into gxt_project.yml"),
     # Note: adapter removed — warehouse/profile info lives in profiles.yml
-    dataset: Optional[str] = typer.Option(None, "--dataset", help="Default dataset/schema to write assignments to (optional)"),
+    dataset: str = typer.Option("gxt_experiments", "--dataset", help="Default dataset/schema to write assignments to"),
     assignments_table: str = typer.Option("gxt_assignments", "--assignments-table", help="Default assignments table name"),
     version: str = typer.Option("0.1.0", "--version", help="Project version"),
 ):

@@ -34,16 +34,6 @@ def compile_manifest(root: Path = None, adapter: Optional[object] = None) -> dic
                     if adapter is not None and hasattr(adapter, "qualify_table"):
                         aud_sql = _qualify_sources_in_sql(aud_sql, adapter)
                     manifest["experiments"][exp.name]["audience_sql"] = aud_sql
-                # If an adapter was provided, include an example hash SQL snippet
-                try:
-                    if adapter is not None and hasattr(adapter, "hash_bucket_sql"):
-                        # Use randomization_unit from config if present, else default to 'user_id'
-                        ru = cfg.get("randomization_unit") if isinstance(cfg, dict) else None
-                        ru = ru or "user_id"
-                        manifest["experiments"][exp.name]["hash_sql_example"] = adapter.hash_bucket_sql(ru)
-                except Exception:
-                    # ignore adapter failures while compiling manifest
-                    manifest["experiments"][exp.name]["hash_sql_example"] = None
             except Exception:
                 manifest["experiments"][exp.name]["config"] = None
 
@@ -54,14 +44,12 @@ def compile_manifest(root: Path = None, adapter: Optional[object] = None) -> dic
 
 
 def _qualify_sources_in_sql(sql: str, adapter) -> str:
-    r"""Replace dbt-style source('dataset','table') calls with adapter-qualified identifiers.
+    r"""Replace Jinja-style {{ source('dataset','table') }} calls with adapter-qualified identifiers.
 
-    This uses a simple regex to find source\(\s*'dataset'\s*,\s*'table'\s*\) patterns.
+    This uses a regex to find {{ source('dataset','table') }} patterns and enforces the Jinja syntax.
     """
-    # matches either literal source('dataset','table') or Jinja-style {{ source('dataset','table') }}
+    # Only matches Jinja-style {{ source('dataset','table') }}
     # Accepts single or double quotes and flexible whitespace inside.
-    literal_pattern = re.compile(r"(?i)\bsource\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)")
-
     jinja_pattern = re.compile(
         r"(?i)\{\{\s*source\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)\s*\}\}"
     )
@@ -74,7 +62,6 @@ def _qualify_sources_in_sql(sql: str, adapter) -> str:
         except Exception:
             return f"{dataset}.{table}"
 
-    # First replace Jinja-style occurrences, then literal occurrences to cover both cases.
+    # Replace Jinja-style occurrences only
     sql = jinja_pattern.sub(_replace_match, sql)
-    sql = literal_pattern.sub(_replace_match, sql)
     return sql

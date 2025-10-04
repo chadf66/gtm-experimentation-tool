@@ -140,7 +140,7 @@ def run(
         raise typer.Exit(code=4)
 
     # Determine target assignments table from experiment config or project-level gxt_project.yml
-    # Priority: config.yml assignments_table -> gxt_project.yml assignments_table -> fallback to dataset.gxt_assignments if adapter dataset available
+    # Priority: config.yml assignments_table -> gxt_project.yml assignments_table -> gxt_project.yml dataset + gxt_assignments
     assignments_table = None
     try:
         cfg = yaml.safe_load((exp_dir / "config.yml").read_text()) or {}
@@ -155,14 +155,16 @@ def run(
             try:
                 proj = yaml.safe_load(gxt_yml.read_text()) or {}
                 assignments_table = proj.get("assignments_table")
+                # If assignments_table is not fully qualified, check for dataset in gxt_project.yml
+                if not assignments_table:
+                    project_dataset = proj.get("dataset")
+                    if project_dataset:
+                        assignments_table = f"{project_dataset}.gxt_assignments"
             except Exception:
                 assignments_table = None
 
-    if not assignments_table and getattr(adapter_obj, "dataset", None):
-        assignments_table = f"{adapter_obj.dataset}.gxt_assignments"
-
     if not assignments_table:
-        typer.echo("Could not determine target assignments_table for upsert (set assignments_table in config.yml or gxt_project.yml or provide profile dataset). Aborting.")
+        typer.echo("Could not determine target assignments_table for upsert (set assignments_table or dataset in gxt_project.yml). Aborting.")
         raise typer.Exit(code=5)
 
     # For non-dry-run runs we will upsert into the assignments table. Build a SELECT that
