@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gxt"
+name = "gtm-experiments-tool"
 version = "0.1.0"
 description = "GTM Experimentation Tool (gxt) - CLI for SQL-based experiment assignments"
 readme = "README.md"
