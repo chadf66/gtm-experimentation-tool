@@ -8,9 +8,13 @@ app = typer.Typer()
 
 
 @app.callback(invoke_without_command=True)
-def list_cmd(status: Optional[str] = typer.Option(None, help="Filter by status (active|inactive|archived)")):
+def list_cmd(
+    status: Optional[str] = typer.Option(None, help="Filter by status (active|inactive|archived)"),
+    project_path: Optional[str] = typer.Option(None, "--project-path", "-p", help="Project root path where the experiments/ folder lives")
+):
     """List experiments in the `experiments/` directory with brief metadata."""
-    root = Path.cwd()
+    # choose project root: provided project_path or current working dir
+    root = Path(project_path).resolve() if project_path else Path.cwd()
     experiments_dir = root / "experiments"
 
     if not experiments_dir.exists():

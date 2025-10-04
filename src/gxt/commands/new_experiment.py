@@ -49,29 +49,23 @@ def new_experiment(
     cfg_tmpl = env.get_template("config.yml.jinja")
     # convert comma-separated tags into a list for the template
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    # attempt to read default assignments_table from profiles.yml (preferred) or gxt_project.yml (legacy)
+    # attempt to read default assignments_table from gxt_project.yml
     assignments_table = ""
-    try:
-        from ..utils.profiles import load_profile
+    gxt_yml = root / "gxt_project.yml"
+    if gxt_yml.exists():
+        try:
+            import yaml
 
-        profile_output = load_profile(root, "gxt_profile")
-        if profile_output and profile_output.get("dataset"):
-            # prefix table with dataset if available
-            assignments_table = f"{profile_output.get('dataset')}.{assignments_table or 'gxt_assignments'}"
-    except Exception:
-        # fallback to reading gxt_project.yml for legacy projects
-        gxt_yml = root / "gxt_project.yml"
-        if gxt_yml.exists():
-            try:
-                import yaml
-
-                proj = yaml.safe_load(gxt_yml.read_text()) or {}
-                if proj.get("assignments_table"):
-                    assignments_table = proj.get("assignments_table")
-            except Exception:
-                assignments_table = ""
-        else:
-            typer.echo(f"Warning: no gxt_project.yml found at {root}; assignments_table will be empty in config.yml")
+            proj = yaml.safe_load(gxt_yml.read_text()) or {}
+            if proj.get("assignments_table"):
+                assignments_table = proj.get("assignments_table")
+            elif proj.get("dataset"):
+                # Use project dataset with default table name if no explicit assignments_table
+                assignments_table = f"{proj.get('dataset')}.gxt_assignments"
+        except Exception:
+            assignments_table = ""
+    else:
+        typer.echo(f"Warning: no gxt_project.yml found at {root}; assignments_table will be empty in config.yml")
 
     cfg = cfg_tmpl.render(
         experiment_id=name,
