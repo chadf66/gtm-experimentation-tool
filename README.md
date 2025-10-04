@@ -1,154 +1,251 @@
 # GTM Experimentation Tool (gxt)
 
-GTM Experimentation Tool (gxt) is a small command-line utility for managing and running A/B experiments stored in a simple project layout. It provides tools to compile experiment manifests, qualify data source references, build deterministic assignment SQL, and optionally execute assignment upserts into a data warehouse. A BigQuery adapter is included to run assignment MERGE operations.
+**A modern CLI for SQL-based A/B testing and experimentation workflows**
 
-## Contents
+Break free from spreadsheet chaos and manual experiment assignment processes. GTM Experimentation Tool empowers data teams to manage experiments with code, automate user assignments with deterministic SQL, and seamlessly integrate with modern data warehouses.
 
-- [Features](#features)
-- [Quick start](#quick-start)
-- [Project layout](#project-layout)
-- [CLI reference and examples](#cli-reference-and-examples)
-- [BigQuery adapter details and requirements](#bigquery-adapter-details-and-requirements)
-- [Developer notes and testing](#developer-notes-and-testing)
-- [License](#license)
+## Why gxt?
 
-## Features
+If you're in GTM, you've likely run into a scenario like this one: Your team wants to test two different GTM outreach strategies for an upcoming product launch campaign targeting enterprise accounts that signed up in the last 90 days.
 
-- Compile experiment manifests and rewrite `source(...)` references to fully qualified table identifiers.
-- Generate deterministic assignment SQL using hashing (BigQuery: `FARM_FINGERPRINT` + `MOD`).
-- Dry-run mode prints compiled SQL and prevents writes.
-- Optional execution against BigQuery with `--no-dry-run`; supports an opt-in `--create-assignments-table` helper.
-- Pluggable adapter model — `BigQueryAdapter` provided as a concrete example.
+**The Manual Process (😫):**
+1. Someone writes a SQL query to find all enterprise accounts from the last 90 days
+2. Export results to a Google Sheet with ~10,000 rows  
+3. Add a `=RAND()` column and sort by it to "randomize"
+4. Manually assign first 5,000 rows to "Subject A" and next 5,000 to "Subject B"
+5. Copy assignments to another sheet for the campaign team
+6. Cross fingers that no one accidentally sorts the sheet
+7. Hope you can reproduce the same assignments next week when the campaign manager asks "wait, which users got which version again?"
 
-## Quick start
+**Problems:**
+- ❌ Manual and error-prone
+- ❌ Not reproducible (different results each time)
+- ❌ No version control or audit trail  
+- ❌ Doesn't scale across multiple experiments
+- ❌ Easy to accidentally corrupt assignments
 
-### Prerequisites
-
-- Python 3.10+.
-- Recommended: create and activate a virtual environment.
-
-### Install dependencies:
-
+**The gxt Way (✅):**
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# One-time setup
+gxt new-experiment email-subject-test
 ```
 
-If you will run against Google BigQuery, install the BigQuery client as well:
-
-```bash
-pip install google-cloud-bigquery
+### Define your audience in SQL in experiments/email-subject-test/audience.sql (version controlled!)
+```sql 
+SELECT user_id 
+FROM analytics.users 
+WHERE account_type = 'enterprise' 
+  AND signup_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
 ```
 
-Set Google credentials (if using BigQuery):
 
-- Set `GOOGLE_APPLICATION_CREDENTIALS` to a service account JSON with BigQuery permissions, or use Application Default Credentials.
-- Ensure billing is enabled for the GCP project if you will run DML operations (MERGE/INSERT).
-
-## Project layout
-
-Repository expects projects in `projects/` with this structure:
-
-- `gxt_project.yml` — project configuration
-- `profiles.yml` — profiles mapping (project/dataset/credentials)
-- `experiments/<experiment_name>/` — each experiment contains:
-  - `audience.sql` — SQL that yields the set of units to assign
-  - `config.yml` — experiment config (variants, randomization_unit, assignments table, etc.)
-- `target/` — compiled manifests are written here by `compile`
-
-## CLI reference
-
-Run the CLI via module invocation or a packaged entry point:
-
-```bash
-python -m src.gxt.main <command> [args]
-# or if installed as `gxt`:
-gxt <command> [args]
-```
-
-### Commands
-
-- `init` — scaffold a project from templates
-- `new-experiment <name>` — create a new experiment scaffold
-- `compile [EXPERIMENT] --project-path <path>` — compile manifests for the project or a single experiment
-- `list --project-path <path>` — list experiments
-- `validate --project-path <path>` — validate experiment configs and SQL
-- `run <EXPERIMENT> --project-path <path> [--no-dry-run] [--adapter ADAPTER_NAME] [--create-assignments-table]` — build and optionally execute assignment upserts
-
-### Run command notes
-
-- Default behavior is a dry-run (prints SQL). Use `--no-dry-run` to execute.
-- `--create-assignments-table` instructs the BigQuery adapter to create the assignments table if it is missing. This is opt-in and requires BigQuery client + permissions.
-
-### Examples
-
-Dry-run compile + run for `demo_exp`:
-
-```bash
-python -m src.gxt.main compile demo_exp --project-path projects/demo
-python -m src.gxt.main run demo_exp --project-path projects/demo
-```
-
-Real run against BigQuery (ensure credentials and billing enabled):
-
-```bash
-python -m src.gxt.main run dummy_experiment2 --project-path projects/test_project2 --no-dry-run --create-assignments-table
-```
-
-## BigQuery adapter details
-
-### Behavior
-
-- The included `BigQueryAdapter` attempts to construct a `google.cloud.bigquery.Client` when `google-cloud-bigquery` is installed and the profile supplies a project (and credentials via env var or ADC).
-- If the client is not available, adapter methods fall back to printing SQL and returning empty results — safe for dry-run.
-
-### Provided methods
-
-- `execute(sql)` — runs a query and returns rows (or prints SQL when client unavailable)
-- `insert_rows(table, rows)` — inserts rows using `insert_rows_json` when available
-- `ensure_table_exists(table, schema, location)` — create table with default schema if missing
-- `upsert_from_select(target_table, src_select_sql, key_columns)` — MERGE FROM (SELECT ...) that inserts rows which don't yet exist (insert-only upsert)
-- `hash_bucket_sql(column, salt, precision)` — returns an expression using `FARM_FINGERPRINT` and `MOD` to compute a deterministic bucket in [0,1)
-
-### Important notes
-
-- Confirm billing on your GCP project before running non-dry-run: DML operations require billing.
-- The default assignments schema used by the adapter is: `experiment_id STRING, unit STRING, variant STRING, assigned_at TIMESTAMP`. You can override by calling `ensure_table_exists` with an explicit schema.
-
-## Configuration and profiles
-
-Example `projects/<project>/profiles.yml`:
-
+### Configure your test in experiments/email-subject-test/config.yml
 ```yaml
-default:
-  project: my-gcp-project
-  dataset: my_dataset
+experiment_id: email-subject-test
+status: active
+randomization_unit: user_id
+assignments_table: gxt_assignments
+variants:
+  - variant1
+    exposure: 0.5
+  - variant2
+    exposure: 0.5
 ```
 
-The tool resolves adapter/profile configuration using `gxt_project.yml` in each project folder when not provided via CLI flags.
+### Generate assignments (same results every time!)
+```bash
+gxt run email-subject-test --no-dry-run
+```
 
-## Developer notes
+The gxt_assignments table will contain deterministic, reproducible user assignments that your application can query to serve the right variant to each user.
 
-- CLI implementation: `src/gxt/main.py` (Typer)
-- Commands: `src/gxt/commands/` (compile, run, init, list, validate, new_experiment)
-- Parser and manifest compilation: `src/gxt/parser/manifest.py`
-- Adapters: `src/gxt/adapters/`
-- Templates: `src/gxt/templates/`
+### Automate
 
-## Testing
+Automate with your preferred orchestration tool (Airflow, cron, etc.). **Done!**
 
-- There are no unit tests in this snapshot. Recommended tests:
-  - Unit tests for `BigQueryAdapter.upsert_from_select` (mock client)
-  - Tests for `manifest.compile_manifest` and `_qualify_sources_in_sql`
+**Result:** Deterministic, reproducible randomized assignments stored in your data warehouse that any team member can query. No more spreadsheet chaos!
 
-## Maintenance and next improvements
 
-- Replace transient state `adapter._last_insert_columns` by passing insert columns explicitly to `upsert_from_select`.
-- Add unit tests and CI pipeline.
-- Add more adapters (Redshift, Snowflake) as needed.
+**For GTM Teams:**
+- Replace error-prone Google Sheets with reliable, version-controlled experiment management
+- Automate experiment assignments with simple SQL logic
+- Scale experiments without manual intervention
+- Maintain experiment history and reproducibility
+
+**For Data Teams:**
+- SQL-first approach using familiar tools and patterns
+- Built-in integration with extensible adapter architecture (currently works with BigQuery, more adapters coming soon!)
+- Dry-run mode for safe testing and validation
+- Clean project structure with reusable templates
+
+## Quick Start
+
+Install via pip:
+```bash
+pip install gtm-experiments-tool
+```
+
+Initialize a new project:
+```bash
+gxt init my-experiments
+cd my-experiments
+```
+
+Create your first experiment:
+```bash
+gxt new-experiment welcome-banner
+```
+
+Run assignments (dry-run by default):
+```bash
+gxt run welcome-banner
+```
+
+## Key Features
+
+- **SQL-Based Logic**: Define experiment audiences and assignments using familiar SQL
+- **Deterministic Assignments**: Reproducible user bucketing using hash-based randomization
+- **BigQuery Integration**: Native support with automatic table management
+- **Version Control Ready**: All configuration stored in YAML and SQL files
+- **Safe by Default**: Dry-run mode prevents accidental data writes
+- **Template System**: Quick scaffolding for new projects and experiments
+
+## Project Structure
+
+A gxt project follows a simple, organized layout:
+
+```
+my-experiments/
+├── gxt_project.yml      # Project configuration
+├── profiles.yml         # Database connection settings  
+├── experiments/
+│   ├── welcome-banner/
+│   │   ├── audience.sql     # SQL defining experiment audience
+│   │   └── config.yml       # Experiment configuration
+│   └── pricing-test/
+│       ├── audience.sql
+│       └── config.yml
+└── target/              # Compiled manifests (auto-generated)
+    └── manifest.json    # Compiled experiment metadata and SQL
+```
+
+### Configuration Files
+
+**gxt_project.yml** - Project settings:
+```yaml
+# Example
+project_name: my_project_name
+version: 0.1.0
+profile: gxt_profile
+dataset: experiments
+assignments_table: gxt_assignments
+```
+
+**profiles.yml** - Database connections:
+```yaml
+# Example
+gxt_profile:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      project: my-gcp-project-id 
+```
+
+**experiments/[name]/config.yml** - Experiment settings:
+```yaml
+experiment_id: customer-onboarding-calls
+status: active
+randomization_unit: user_id
+assignments_table: gxt_assignments
+variants:
+  - treatment
+    exposure: 0.6
+  - control
+    exposure: 0.4
+```
+
+## CLI Reference
+
+All commands support `--project-path` to specify the project directory (defaults to current directory).
+
+### `gxt init <project-name>`
+Create a new gxt project with sample files and templates.
+
+```bash
+gxt init my-experiments
+```
+
+### `gxt new-experiment <experiment-name>`
+Scaffold a new experiment with template files.
+
+```bash
+gxt new-experiment --project-path ./my-experiments pricing-test
+```
+
+### `gxt list`
+Display all experiments in the project.
+
+```bash
+gxt list --project-path ./my-experiments
+```
+
+### `gxt validate`
+Check experiment configurations and SQL syntax.
+
+```bash
+gxt validate --project-path ./my-experiments
+```
+
+### `gxt compile [experiment-name]`
+Compile experiment manifests, resolving `{{ source() }}` references to full table names.
+
+```bash
+# Compile all experiments
+gxt compile --project-path ./my-experiments
+
+# Compile specific experiment
+gxt compile welcome-banner --project-path ./my-experiments
+```
+
+### `gxt run <experiment-name>`
+Generate and optionally execute assignment SQL.
+
+```bash
+# Dry run (default) - prints SQL without executing
+gxt run welcome-banner --project-path ./my-experiments
+
+# Execute against BigQuery
+gxt run welcome-banner --project-path ./my-experiments --no-dry-run
+
+# Create assignments table if it doesn't exist
+gxt run welcome-banner --project-path ./my-experiments --no-dry-run --create-assignments-table
+```
+
+**Options:**
+- `--no-dry-run`: Execute SQL against the database (default is dry-run)
+- `--create-assignments-table`: Create the assignments table if it doesn't exist
+- `--adapter`: Specify adapter (currently only `bigquery` supported)
+
+## BigQuery Setup
+
+1. **Install dependencies:**
+   ```bash
+   pip install google-cloud-bigquery
+   ```
+
+2. **Set up authentication:**
+   - Service account: Set `GOOGLE_APPLICATION_CREDENTIALS` environment variable
+   - Or use Application Default Credentials: `gcloud auth application-default login`
+
+3. **Ensure billing is enabled** on your GCP project for DML operations
+
+
+## Contributing
+
+This project welcomes contributions! Please see the [GitHub repository](https://github.com/chadf66/gtm-experimentation-tool) for issues and development guidelines.
 
 ## License
 
-See the `LICENSE` file in the repository.
+Licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
 
