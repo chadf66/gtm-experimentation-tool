@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gtm-experiments-tool"
-version = "0.1.0"
+version = "0.1.1"
 description = "GTM Experimentation Tool (gxt) - CLI for SQL-based experiment assignments"
 readme = "README.md"
 requires-python = ">=3.10"
