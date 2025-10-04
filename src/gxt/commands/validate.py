@@ -175,9 +175,6 @@ def validate(
         except Exception:
             # swallow errors and report via errors list above
             pass
-        except Exception:
-            # swallow errors and report via errors list above
-            pass
 
     # Report results
     if errors:
